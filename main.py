@@ -105,6 +105,9 @@ async def process_file(file: UploadFile):
 
     return {"filename": file.filename, "base64": result, "error": error}
 
+# =========================
+# ROOT ENDPOINT
+# =========================
 @app.get("/")
 def root():
     return {"message": "API is running!"}
