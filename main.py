@@ -38,6 +38,7 @@ app.add_middleware(
 # =========================
 session = new_session(model_name="isnet-general-use")
 
+
 # =========================
 # SECURITY CHECK
 # =========================
@@ -51,6 +52,7 @@ def verify_request(request: Request):
         auth = request.headers.get("Authorization")
         if not auth or auth != f"Bearer {API_KEY}":
             raise HTTPException(status_code=401, detail="Invalid API key")
+
 
 # =========================
 # IMAGE PROCESSING
@@ -75,7 +77,7 @@ def process_image(contents: bytes):
         alpha_matting=True,
         alpha_matting_foreground_threshold=240,
         alpha_matting_background_threshold=10,
-        alpha_matting_erode_size=10
+        alpha_matting_erode_size=10,
     )
 
     # Post-process
@@ -89,6 +91,7 @@ def process_image(contents: bytes):
 
     return f"data:image/png;base64,{img_base64}", None
 
+
 # =========================
 # ASYNC WRAPPER (for batch)
 # =========================
@@ -96,19 +99,16 @@ async def process_file(file: UploadFile):
     contents = await file.read()
 
     if len(contents) > MAX_FILE_SIZE:
-        return {
-            "filename": file.filename,
-            "base64": None,
-            "error": "File too large"
-        }
+        return {"filename": file.filename, "base64": None, "error": "File too large"}
 
     result, error = process_image(contents)
 
-    return {
-        "filename": file.filename,
-        "base64": result,
-        "error": error
-    }
+    return {"filename": file.filename, "base64": result, "error": error}
+
+@app.get("/")
+def root():
+    return {"message": "API is running!"}
+
 
 # =========================
 # MAIN ENDPOINT
@@ -128,9 +128,11 @@ async def remove_bg(
 
     return {"results": results}
 
+
 # =========================
 # RUN SERVER
 # =========================
 if __name__ == "__main__":
     import uvicorn
+
     uvicorn.run(app, host="0.0.0.0", port=8000)
