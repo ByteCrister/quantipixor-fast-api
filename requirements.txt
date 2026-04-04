@@ -1,0 +1,6 @@
+fastapi
+uvicorn
+rembg
+python-multipart
+pillow
+python-dotenv
