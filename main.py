@@ -34,10 +34,29 @@ app.add_middleware(
 )
 
 # =========================
-# LOAD MODEL ONCE (IMPORTANT)
+# GLOBAL SESSION (will be loaded on startup)
 # =========================
-session = new_session(model_name="u2netp")  # smaller, faster model with good quality
+session = None
 
+# =========================
+# STARTUP EVENT: LOAD MODEL
+# =========================
+@app.on_event("startup")
+async def load_model():
+    global session
+    # Force rembg to use /tmp for model cache (writable on Render)
+    os.environ.setdefault('U2NET_HOME', '/tmp/.u2net')
+    os.makedirs('/tmp/.u2net', exist_ok=True)
+    # Load the model – uses cached file if pre-downloaded during build
+    session = new_session(model_name="u2netp")
+    print("✅ Background removal model loaded (u2netp)")
+
+# =========================
+# HEALTH CHECK (for Render port detection)
+# =========================
+@app.get("/health")
+def health():
+    return {"status": "ok", "model_loaded": session is not None}
 
 # =========================
 # SECURITY CHECK
@@ -52,7 +71,6 @@ def verify_request(request: Request):
         auth = request.headers.get("Authorization")
         if not auth or auth != f"Bearer {API_KEY}":
             raise HTTPException(status_code=401, detail="Invalid API key")
-
 
 # =========================
 # IMAGE PROCESSING
@@ -133,7 +151,7 @@ async def remove_bg(
 
 
 # =========================
-# RUN SERVER
+# RUN SERVER (for local testing only)
 # =========================
 if __name__ == "__main__":
     import uvicorn
