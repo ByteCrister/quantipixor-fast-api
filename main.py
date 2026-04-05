@@ -36,7 +36,7 @@ app.add_middleware(
 # =========================
 # LOAD MODEL ONCE (IMPORTANT)
 # =========================
-session = new_session(model_name="isnet-general-use")
+session = new_session(model_name="u2netp")  # smaller, faster model with good quality
 
 
 # =========================
