@@ -27,7 +27,8 @@ app = FastAPI(title="BG Remover API")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=ALLOWED_ORIGINS,
+    # allow_origins=ALLOWED_ORIGINS,
+    allow_origins="*",
     allow_credentials=True,
     allow_methods=["POST"],
     allow_headers=["*"],
@@ -88,8 +89,8 @@ def process_image(contents: bytes):
     enhancer = ImageEnhance.Contrast(input_image)
     input_image = enhancer.enhance(1.2)
 
-    # Remove background with alpha matting
-    output_bytes = remove(
+    # Remove background – output is a PIL Image (RGBA)
+    output_image = remove(
         input_image,
         session=session,
         alpha_matting=True,
@@ -99,16 +100,14 @@ def process_image(contents: bytes):
     )
 
     # Post-process
-    output_image = Image.open(io.BytesIO(output_bytes)).convert("RGBA")
-    output_image = output_image.filter(ImageFilter.SHARPEN)
+    output_image = output_image.convert("RGBA").filter(ImageFilter.SHARPEN)
 
+    # Save to bytes and encode as base64 data URL
     buffered = io.BytesIO()
     output_image.save(buffered, format="PNG")
-
     img_base64 = base64.b64encode(buffered.getvalue()).decode("utf-8")
 
     return f"data:image/png;base64,{img_base64}", None
-
 
 # =========================
 # ASYNC WRAPPER (for batch)
@@ -158,3 +157,4 @@ if __name__ == "__main__":
 
     port = int(os.environ.get("PORT", 8000))
     uvicorn.run(app, host="0.0.0.0", port=port)
+    # start -> uvicorn main:app --reload --port 8000
