@@ -5,3 +5,4 @@ onnxruntime
 python-multipart
 pillow
 python-dotenv
+apscheduler
