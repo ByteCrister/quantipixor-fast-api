@@ -8,6 +8,7 @@ from rembg import remove, new_session
 from PIL import Image, ImageEnhance, ImageFilter
 import dotenv
 import asyncio
+import resource
 
 dotenv.load_dotenv()
 
@@ -18,7 +19,7 @@ ALLOWED_ORIGINS = os.getenv("ALLOWED_ORIGINS", "http://localhost:3000").split(",
 API_KEY = os.getenv("API_KEY", None)
 
 MAX_FILE_SIZE = 5 * 1024 * 1024  # 5MB
-MAX_IMAGE_SIZE = 1500  # resize for performance
+MAX_IMAGE_SIZE = 800  # resize for performance
 PORT = int(os.environ.get("PORT", 8000))
 
 # =========================
@@ -78,7 +79,11 @@ def process_image(contents: bytes):
         input_image = Image.open(io.BytesIO(contents)).convert("RGB")
     except Exception:
         return None, "Unsupported image format"
-
+    
+    # === Memory Limit Logging ===
+    mem_usage = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+    print(f"[DEBUG] Memory after loading image: {mem_usage} KB")
+    
     # Resize (performance boost)
     input_image.thumbnail((MAX_IMAGE_SIZE, MAX_IMAGE_SIZE))
 
@@ -90,7 +95,7 @@ def process_image(contents: bytes):
     output_image = remove(
         input_image,
         session=session,
-        alpha_matting=True,
+        alpha_matting=False,
         alpha_matting_foreground_threshold=240,
         alpha_matting_background_threshold=10,
         alpha_matting_erode_size=10,
