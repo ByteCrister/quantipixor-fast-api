@@ -1,11 +1,10 @@
 #!/bin/bash
-# build.sh
+# Install Python dependencies
+pip install --upgrade pip
+pip install -r requirements.txt
 
-# Install dependencies (Render will already run pip install from requirements.txt,
-# but you can add extra commands here)
-
-# Pre-download the rembg model into a persistent directory
+# Pre-download the rembg model (saves to ./.u2net)
 export U2NET_HOME="$PWD/.u2net"
 python -c "from rembg import new_session; new_session('u2netp')"
 
-echo "Model pre-download complete"
+echo "✅ Model pre-download complete"
