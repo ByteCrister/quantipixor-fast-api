@@ -8,8 +8,6 @@ from rembg import remove, new_session
 from PIL import Image, ImageEnhance, ImageFilter
 import dotenv
 import asyncio
-import httpx
-from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
 dotenv.load_dotenv()
 
@@ -21,10 +19,6 @@ API_KEY = os.getenv("API_KEY", None)
 
 MAX_FILE_SIZE = 5 * 1024 * 1024  # 5MB
 MAX_IMAGE_SIZE = 1500  # resize for performance
-
-# Keep‑alive settings (prevents cold start on Render free tier)
-KEEP_ALIVE_ENABLED = os.getenv("KEEP_ALIVE_ENABLED", "true").lower() == "true"
-KEEP_ALIVE_INTERVAL = int(os.getenv("KEEP_ALIVE_INTERVAL", "10"))  # minutes
 PORT = int(os.environ.get("PORT", 8000))
 
 # =========================
@@ -34,73 +28,35 @@ app = FastAPI(title="BG Remover API")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins="*",  # Fine‑tune in production if needed
+    allow_origins=ALLOWED_ORIGINS,
     allow_credentials=True,
     allow_methods=["POST"],
     allow_headers=["*"],
 )
 
 # =========================
-# GLOBAL SESSION (will be loaded on startup)
+# GLOBAL SESSION
 # =========================
 session = None
-scheduler = None
-
 
 # =========================
-# STARTUP EVENT: LOAD MODEL & START KEEP‑ALIVE
+# STARTUP: LOAD MODEL
 # =========================
 @app.on_event("startup")
 async def load_model():
-    global session, scheduler
+    global session
     # Force rembg to use /tmp for model cache (writable on Render)
     os.environ.setdefault("U2NET_HOME", "/tmp/.u2net")
     os.makedirs("/tmp/.u2net", exist_ok=True)
-    # Load the model – uses cached file if pre-downloaded during build
     session = new_session(model_name="u2netp")
     print("✅ Background removal model loaded (u2netp)")
 
-    # Start keep‑alive scheduler if enabled
-    if KEEP_ALIVE_ENABLED:
-        scheduler = AsyncIOScheduler()
-        # Ping the local health endpoint every KEEP_ALIVE_INTERVAL minutes
-        scheduler.add_job(keep_alive_job, "interval", minutes=KEEP_ALIVE_INTERVAL)
-        scheduler.start()
-        print(f"🔄 Keep‑alive scheduler started (interval {KEEP_ALIVE_INTERVAL}s)")
-
-
-@app.on_event("shutdown")
-async def shutdown_scheduler():
-    global scheduler
-    if scheduler:
-        scheduler.shutdown()
-        print("🛑 Keep‑alive scheduler stopped")
-
-
 # =========================
-# KEEP‑ALIVE JOB
-# =========================
-async def keep_alive_job():
-    """Ping the local /health endpoint to avoid idle shutdown."""
-    url = f"http://localhost:{PORT}/health"
-    try:
-        async with httpx.AsyncClient(timeout=5.0) as client:
-            response = await client.get(url)
-            if response.status_code == 200:
-                print("💓 Keep‑alive ping successful")
-            else:
-                print(f"⚠️ Keep‑alive ping returned {response.status_code}")
-    except Exception as e:
-        print(f"❌ Keep‑alive ping failed: {e}")
-
-
-# =========================
-# HEALTH CHECK (for Render port detection & keep‑alive)
+# HEALTH CHECK
 # =========================
 @app.get("/health")
 def health():
     return {"status": "ok", "model_loaded": session is not None}
-
 
 # =========================
 # SECURITY CHECK
@@ -113,7 +69,6 @@ def verify_request(request: Request):
         auth = request.headers.get("Authorization")
         if not auth or auth != f"Bearer {API_KEY}":
             raise HTTPException(status_code=401, detail="Invalid API key")
-
 
 # =========================
 # IMAGE PROCESSING
@@ -151,7 +106,6 @@ def process_image(contents: bytes):
 
     return f"data:image/png;base64,{img_base64}", None
 
-
 # =========================
 # ASYNC WRAPPER (for batch)
 # =========================
@@ -162,14 +116,12 @@ async def process_file(file: UploadFile):
     result, error = process_image(contents)
     return {"filename": file.filename, "base64": result, "error": error}
 
-
 # =========================
 # ROOT ENDPOINT
 # =========================
 @app.get("/")
 def root():
     return {"message": "API is running!"}
-
 
 # =========================
 # MAIN ENDPOINT
@@ -185,12 +137,10 @@ async def remove_bg(
     results = await asyncio.gather(*[process_file(f) for f in files])
     return {"results": results}
 
-
 # =========================
 # RUN SERVER (for local testing only)
 # =========================
 if __name__ == "__main__":
     import uvicorn
-
     uvicorn.run(app, host="0.0.0.0", port=PORT)
     # start -> uvicorn main:app --reload --port 8000

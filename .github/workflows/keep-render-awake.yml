@@ -1,0 +1,15 @@
+name: Keep Render Awake
+
+on:
+  schedule:
+    # Every 10 minutes (adjust as needed)
+    - cron: '*/10 * * * *'
+  workflow_dispatch:  # allow manual trigger
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping Render API
+        run: |
+          curl -I -s -o /dev/null -w "%{http_code}\n" https://quantipixor-fast-api-r0dg.onrender.com/health
