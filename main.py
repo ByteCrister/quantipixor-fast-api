@@ -38,25 +38,26 @@ app.add_middleware(
 # =========================
 _session = None
 
+
 def get_session():
     global _session
     if _session is None:
         cache_dir = "/tmp/.u2net"
         os.makedirs(cache_dir, exist_ok=True)
-        
-        # Path to model that was downloaded during build
-        bundled_model_dir = os.path.join(os.path.dirname(__file__), ".u2net")
-        bundled_model_path = os.path.join(bundled_model_dir, "u2netp.onnx")
-        target_path = os.path.join(cache_dir, "u2netp.onnx")
-        
-        if os.path.exists(bundled_model_path) and not os.path.exists(target_path):
-            print("📦 Copying model from build output to /tmp")
-            shutil.copy2(bundled_model_path, target_path)
-        
         os.environ["U2NET_HOME"] = cache_dir
+
+        # Optionally copy pre-downloaded model from build artifact
+        bundled_model = os.path.join(os.path.dirname(__file__), ".u2net", "u2netp.onnx")
+        target = os.path.join(cache_dir, "u2netp.onnx")
+        if os.path.exists(bundled_model) and not os.path.exists(target):
+            import shutil
+
+            shutil.copy2(bundled_model, target)
+
         _session = new_session(model_name="u2netp")
         print("✅ Model loaded")
     return _session
+
 
 # =========================
 # HEALTH CHECK
@@ -64,6 +65,7 @@ def get_session():
 @app.get("/health")
 def health():
     return {"status": "ok", "model_loaded": _session is not None}
+
 
 # =========================
 # SECURITY CHECK
@@ -77,6 +79,7 @@ def verify_request(request: Request):
         if not auth or auth != f"Bearer {API_KEY}":
             raise HTTPException(status_code=401, detail="Invalid API key")
 
+
 # =========================
 # IMAGE PROCESSING
 # =========================
@@ -85,7 +88,7 @@ def process_image(contents: bytes):
         input_image = Image.open(io.BytesIO(contents)).convert("RGB")
     except Exception:
         return None, "Unsupported image format"
-    
+
     input_image.thumbnail((MAX_IMAGE_SIZE, MAX_IMAGE_SIZE))
 
     enhancer = ImageEnhance.Contrast(input_image)
@@ -109,6 +112,7 @@ def process_image(contents: bytes):
 
     return f"data:image/png;base64,{img_base64}", None
 
+
 async def process_file(file: UploadFile):
     contents = await file.read()
     if len(contents) > MAX_FILE_SIZE:
@@ -116,9 +120,11 @@ async def process_file(file: UploadFile):
     result, error = process_image(contents)
     return {"filename": file.filename, "base64": result, "error": error}
 
+
 @app.get("/")
 def root():
     return {"message": "API is running on Vercel!"}
+
 
 @app.post("/remove-bg")
 async def remove_bg(

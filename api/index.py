@@ -1,5 +1,4 @@
-# api/index.py
-from main import app  # import existing FastAPI app
+from mangum import Mangum
+from main import app  # your FastAPI instance
 
-# Vercel expects a callable named 'app'
-handler = app
+handler = Mangum(app)
