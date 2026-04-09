@@ -1,3 +1,5 @@
+# main.py (modified for Vercel)
+
 import os
 import io
 import base64
@@ -8,7 +10,7 @@ from rembg import remove, new_session
 from PIL import Image, ImageEnhance, ImageFilter
 import dotenv
 import asyncio
-import resource
+import shutil
 
 dotenv.load_dotenv()
 
@@ -18,13 +20,9 @@ dotenv.load_dotenv()
 ALLOWED_ORIGINS = os.getenv("ALLOWED_ORIGINS", "http://localhost:3000").split(",")
 API_KEY = os.getenv("API_KEY", None)
 
-MAX_FILE_SIZE = 5 * 1024 * 1024  # 5MB
-MAX_IMAGE_SIZE = 800  # resize for performance
-PORT = int(os.environ.get("PORT", 8000))
+MAX_FILE_SIZE = 5 * 1024 * 1024
+MAX_IMAGE_SIZE = 800
 
-# =========================
-# INIT APP
-# =========================
 app = FastAPI(title="BG Remover API")
 
 app.add_middleware(
@@ -36,28 +34,36 @@ app.add_middleware(
 )
 
 # =========================
-# GLOBAL SESSION
+# LAZY MODEL LOADER (Vercel-friendly)
 # =========================
-session = None
+_session = None
 
-# =========================
-# STARTUP: LOAD MODEL
-# =========================
-@app.on_event("startup")
-async def load_model():
-    global session
-    # Force rembg to use /tmp for model cache (writable on Render)
-    os.environ.setdefault("U2NET_HOME", os.path.join(os.path.dirname(__file__), ".u2net"))
-    os.makedirs(os.path.join(os.path.dirname(__file__), ".u2net"), exist_ok=True)
-    session = new_session(model_name="u2netp")
-    print("✅ Background removal model loaded (u2netp)")
+def get_session():
+    global _session
+    if _session is None:
+        cache_dir = "/tmp/.u2net"
+        os.makedirs(cache_dir, exist_ok=True)
+        
+        # Path to model that was downloaded during build
+        bundled_model_dir = os.path.join(os.path.dirname(__file__), ".u2net")
+        bundled_model_path = os.path.join(bundled_model_dir, "u2netp.onnx")
+        target_path = os.path.join(cache_dir, "u2netp.onnx")
+        
+        if os.path.exists(bundled_model_path) and not os.path.exists(target_path):
+            print("📦 Copying model from build output to /tmp")
+            shutil.copy2(bundled_model_path, target_path)
+        
+        os.environ["U2NET_HOME"] = cache_dir
+        _session = new_session(model_name="u2netp")
+        print("✅ Model loaded")
+    return _session
 
 # =========================
 # HEALTH CHECK
 # =========================
 @app.get("/health")
 def health():
-    return {"status": "ok", "model_loaded": session is not None}
+    return {"status": "ok", "model_loaded": _session is not None}
 
 # =========================
 # SECURITY CHECK
@@ -80,40 +86,29 @@ def process_image(contents: bytes):
     except Exception:
         return None, "Unsupported image format"
     
-    # === Memory Limit Logging ===
-    mem_usage = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
-    print(f"[DEBUG] Memory after loading image: {mem_usage} KB")
-    
-    # Resize (performance boost)
     input_image.thumbnail((MAX_IMAGE_SIZE, MAX_IMAGE_SIZE))
 
-    # Enhance contrast (better edge detection)
     enhancer = ImageEnhance.Contrast(input_image)
     input_image = enhancer.enhance(1.2)
 
-    # Remove background – output is a PIL Image (RGBA)
+    # Use lazy-loaded session
     output_image = remove(
         input_image,
-        session=session,
+        session=get_session(),
         alpha_matting=False,
         alpha_matting_foreground_threshold=240,
         alpha_matting_background_threshold=10,
         alpha_matting_erode_size=10,
     )
 
-    # Post-process
     output_image = output_image.convert("RGBA").filter(ImageFilter.SHARPEN)
 
-    # Save to bytes and encode as base64 data URL
     buffered = io.BytesIO()
     output_image.save(buffered, format="PNG")
     img_base64 = base64.b64encode(buffered.getvalue()).decode("utf-8")
 
     return f"data:image/png;base64,{img_base64}", None
 
-# =========================
-# ASYNC WRAPPER (for batch)
-# =========================
 async def process_file(file: UploadFile):
     contents = await file.read()
     if len(contents) > MAX_FILE_SIZE:
@@ -121,16 +116,10 @@ async def process_file(file: UploadFile):
     result, error = process_image(contents)
     return {"filename": file.filename, "base64": result, "error": error}
 
-# =========================
-# ROOT ENDPOINT
-# =========================
 @app.get("/")
 def root():
-    return {"message": "API is running!"}
+    return {"message": "API is running on Vercel!"}
 
-# =========================
-# MAIN ENDPOINT
-# =========================
 @app.post("/remove-bg")
 async def remove_bg(
     request: Request,
@@ -141,11 +130,3 @@ async def remove_bg(
         raise HTTPException(status_code=400, detail="No files provided")
     results = await asyncio.gather(*[process_file(f) for f in files])
     return {"results": results}
-
-# =========================
-# RUN SERVER (for local testing only)
-# =========================
-if __name__ == "__main__":
-    import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=PORT)
-    # start -> uvicorn main:app --reload --port 8000
