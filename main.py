@@ -46,8 +46,8 @@ session = None
 async def load_model():
     global session
     # Force rembg to use /tmp for model cache (writable on Render)
-    os.environ.setdefault("U2NET_HOME", "/tmp/.u2net")
-    os.makedirs("/tmp/.u2net", exist_ok=True)
+    os.environ.setdefault("U2NET_HOME", os.path.join(os.path.dirname(__file__), ".u2net"))
+    os.makedirs(os.path.join(os.path.dirname(__file__), ".u2net"), exist_ok=True)
     session = new_session(model_name="u2netp")
     print("✅ Background removal model loaded (u2netp)")
 
